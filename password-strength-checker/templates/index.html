@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Password Strength Checker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+  <div class="scanline"></div>
+
+  <main class="card">
+
+    <header class="card__header">
+      <div class="lock" id="lock">
+        <svg viewBox="0 0 24 24" width="28" height="28" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect id="lockBody" x="4" y="10" width="16" height="10" rx="2" stroke="currentColor" stroke-width="1.6"/>
+          <path id="lockShackle" d="M7 10V7a5 5 0 0 1 10 0v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <circle cx="12" cy="15" r="1.4" fill="currentColor"/>
+        </svg>
+      </div>
+      <div>
+        <p class="eyebrow">SEC // clearance check</p>
+        <h1>Password Strength Checker</h1>
+      </div>
+    </header>
+
+    <label class="field-label" for="password">Enter a password to analyze</label>
+    <div class="input-row">
+      <input
+        type="password"
+        id="password"
+        placeholder="type something..."
+        autocomplete="off"
+        spellcheck="false"
+      >
+      <button type="button" id="toggleVisibility" aria-label="Show password">👁</button>
+    </div>
+
+    <div class="meter" id="meter">
+      <span class="meter__segment" data-index="1"></span>
+      <span class="meter__segment" data-index="2"></span>
+      <span class="meter__segment" data-index="3"></span>
+      <span class="meter__segment" data-index="4"></span>
+      <span class="meter__segment" data-index="5"></span>
+      <span class="meter__segment" data-index="6"></span>
+    </div>
+
+    <div class="status-row">
+      <span class="status-label" id="statusLabel">ENTER A PASSWORD</span>
+      <span class="status-score" id="statusScore">0 / 6</span>
+    </div>
+
+    <section class="checklist" id="checklist">
+      <div class="checklist__item" data-key="min_length_8">
+        <span class="dot"></span> At least 8 characters
+      </div>
+      <div class="checklist__item" data-key="good_length_12">
+        <span class="dot"></span> 12+ characters (bonus)
+      </div>
+      <div class="checklist__item" data-key="has_lowercase">
+        <span class="dot"></span> Lowercase letter (a-z)
+      </div>
+      <div class="checklist__item" data-key="has_uppercase">
+        <span class="dot"></span> Uppercase letter (A-Z)
+      </div>
+      <div class="checklist__item" data-key="has_digit">
+        <span class="dot"></span> Number (0-9)
+      </div>
+      <div class="checklist__item" data-key="has_symbol">
+        <span class="dot"></span> Special character (!@#$...)
+      </div>
+    </section>
+
+    <section class="feedback" id="feedback">
+      <p class="feedback__title">Feedback</p>
+      <ul id="feedbackList"><li class="muted">Start typing to see live feedback.</li></ul>
+    </section>
+
+    <footer class="card__footer">
+      Built with Python + Flask · College mini project
+    </footer>
+
+  </main>
+
+<script>
+const passwordInput   = document.getElementById('password');
+const toggleBtn       = document.getElementById('toggleVisibility');
+const statusLabel     = document.getElementById('statusLabel');
+const statusScore     = document.getElementById('statusScore');
+const feedbackList    = document.getElementById('feedbackList');
+const meterSegments   = document.querySelectorAll('.meter__segment');
+const checklistItems  = document.querySelectorAll('.checklist__item');
+const lock            = document.getElementById('lock');
+
+// Colors per strength label, used for the meter, lock icon and status text.
+const STRENGTH_COLORS = {
+  "No password entered": "#4B5563",
+  "Very Weak":  "#EF4444",
+  "Weak":       "#F97316",
+  "Medium":     "#EAB308",
+  "Strong":     "#22C55E",
+  "Very Strong":"#3DDC97"
+};
+
+let debounceTimer = null;
+
+passwordInput.addEventListener('input', () => {
+  clearTimeout(debounceTimer);
+  // debounce so we don't spam the server on every single keystroke
+  debounceTimer = setTimeout(checkPassword, 150);
+});
+
+toggleBtn.addEventListener('click', () => {
+  const isPassword = passwordInput.type === 'password';
+  passwordInput.type = isPassword ? 'text' : 'password';
+  toggleBtn.textContent = isPassword ? '🙈' : '👁';
+});
+
+async function checkPassword() {
+  const password = passwordInput.value;
+
+  const response = await fetch('/check', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password })
+  });
+  const result = await response.json();
+  renderResult(result);
+}
+
+function renderResult(result) {
+  const color = STRENGTH_COLORS[result.label] || "#4B5563";
+
+  // Update status text
+  statusLabel.textContent = result.label.toUpperCase();
+  statusLabel.style.color = color;
+  statusScore.textContent = `${result.score} / ${result.max_score}`;
+
+  // Update segmented meter
+  meterSegments.forEach((seg, i) => {
+    if (i < result.score) {
+      seg.style.background = color;
+    } else {
+      seg.style.background = "";
+    }
+  });
+
+  // Update lock icon color
+  lock.style.color = color;
+
+  // Update checklist
+  checklistItems.forEach(item => {
+    const key = item.dataset.key;
+    const passed = result.checks[key];
+    item.classList.toggle('is-pass', !!passed);
+    item.classList.toggle('is-fail', !passed);
+  });
+
+  // Update feedback list
+  feedbackList.innerHTML = "";
+  if (result.feedback.length === 0) {
+    const li = document.createElement('li');
+    li.className = 'muted';
+    li.textContent = 'Start typing to see live feedback.';
+    feedbackList.appendChild(li);
+  } else {
+    result.feedback.forEach(tip => {
+      const li = document.createElement('li');
+      li.textContent = tip;
+      feedbackList.appendChild(li);
+    });
+  }
+}
+</script>
+
+</body>
+</html>
